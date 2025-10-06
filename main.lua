@@ -4,6 +4,14 @@ local player = {
     speed = 300,
     width = nil,
     height = nil,
+    spriteSheets = {
+        idle = nil,
+        jump = nil
+    },
+    animation = {
+        idle = nil,
+        jump = nil
+    }
 }
 local gravity = 900 
 
@@ -41,17 +49,17 @@ function love.load()
     anim8 = require 'libraries/anim8'
     love.graphics.setDefaultFilter("nearest", "nearest")
 
-    player.spriteSheet = love.graphics.newImage("assets/player/IdleCat.png")
-    player.width = player.spriteSheet:getWidth()
-    player.height = player.spriteSheet:getHeight()
+    player.spriteSheets.idle = love.graphics.newImage("assets/player/IdleCat.png")
+    player.width = player.spriteSheets.idle:getWidth()
+    player.height = player.spriteSheets.idle:getHeight()
 
     player.spriteSheet2 = love.graphics.newImage("assets/player/JumpCat.png")
     player.width = player.spriteSheet2:getWidth()
     player.height = player.spriteSheet2:getHeight()
 
     local g = anim8.newGrid(32, 32,
-        player.spriteSheet:getWidth(),
-        player.spriteSheet:getHeight()
+        player.spriteSheets.idle:getWidth(),
+        player.spriteSheets.idle:getHeight()
     )
 
     player.anim = anim8.newAnimation(g('1-7', 1), 0.1)
@@ -87,18 +95,23 @@ function love.update(dt)
         player.x = player.x - player.speed * dt
     end
     if love.keyboard.isDown("space") then
+        local jumpCount = 2
+        print(jumpCount)
+        if player.y + player.height * player.scale < groundY or jumpCount == 0 then
+            return
+        end
         player.vy = -600
+        jumpCount = jumpCount - 1
+        print(jumpCount)
     end
     player.anim:update(dt)
 end
 
 
 function love.draw()
-    love.graphics.setColor(0.2, 0.7, 0.2)
-    love.graphics.setColor(1,1,1)
     for i = 11, 1, -1 do
         love.graphics.draw(background["layer"..i], 0, 0)
     end
     -- love.graphics.rectangle("fill", 0, groundY, love.graphics.getWidth(), love.graphics.getHeight() - groundY)
-    player.anim:draw(player.spriteSheet, player.x, player.y, 0, 2, 2)
+    player.anim:draw(player.spriteSheets.idle, player.x, player.y, 0, 2, 2)
 end
