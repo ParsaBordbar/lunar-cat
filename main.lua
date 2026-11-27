@@ -1,117 +1,253 @@
-local player = {
-    x = 100,
-    y = 700,
-    speed = 300,
-    width = nil,
-    height = nil,
-    spriteSheets = {
-        idle = nil,
-        jump = nil
-    },
-    animation = {
-        idle = nil,
-        jump = nil
-    }
-}
-local gravity = 900 
+local input = require("src.input")
+local background = require("src.background")
+local fx = require("src.fx")
+local Player = require("src.player")
+local World = require("src.world.init")
+local ui = require("src.ui")
 
-local background = {
-    layer1 = nil,
-    layer2 = nil,
-    layer3 = nil,
-    layer4 = nil,
-    layer5 = nil,
-    layer6 = nil,
-    layer7 = nil,
-    layer8 = nil,
-    layer9 = nil,
-    layer10 = nil,
-    layer11 = nil,
+local WIDTH, HEIGHT = 1280, 720
+local FLOOR_Y, CEIL_Y = 640, 80
+local PLAYER_START_X = 220
+local PLAYER_MAX_X = 800
+
+local START_SPEED = 340
+local MAX_SPEED = 720
+local SPEED_RAMP = 6
+local TITLE_SPEED = 120
+local FISH_POINTS = 25
+local RESTART_DELAY = 0.6
+local BANNER_TIME = 2.5
+
+local ZONE_NAMES = {
+    moon = "LUNAR SURFACE",
+    station = "ORBITAL STATION",
 }
 
-local layers = {
-  "Layer_0000_9.png",
-  "Layer_0001_8.png",
-  "Layer_0002_7.png",
-  "Layer_0003_6.png",
-  "Layer_0004_Lights.png",
-  "Layer_0005_5.png",
-  "Layer_0006_4.png",
-  "Layer_0007_Lights.png",
-  "Layer_0008_3.png",
-  "Layer_0009_2.png",
-  "Layer_0010_1.png",
-  "Layer_0011_0.png"
-}
+local BOOT_COLOR = { 0.4, 0.9, 1.0 }
+local DUST_COLOR = { 0.85, 0.86, 0.9 }
 
+local game = {
+    state = "title",
+    best = 0,
+    newBest = false,
+    debug = false,
+    score = 0,
+}
+local fonts = {}
+
+local function loadBest()
+    local ok, data = pcall(love.filesystem.read, "best.txt")
+    return (ok and tonumber(data)) or 0
+end
+
+local function saveBest(value)
+    pcall(love.filesystem.write, "best.txt", tostring(value))
+end
+
+local function calcScore()
+    return math.floor(game.distance / 10) + game.fishCount * FISH_POINTS
+end
+
+local function newRun()
+    game.player = Player.new(PLAYER_START_X, FLOOR_Y - 48, PLAYER_MAX_X)
+    game.world = World.new(WIDTH, HEIGHT, FLOOR_Y, CEIL_Y)
+    game.speed = START_SPEED
+    game.distance = 0
+    game.fishCount = 0
+    game.deadTimer = 0
+    game.newBest = false
+    game.zone = "moon"
+    game.banner = nil
+    game.score = 0
+    fx.reset()
+end
+
+local function showBanner(text)
+    game.banner = { text = text, life = BANNER_TIME }
+end
+
+local function startRun()
+    newRun()
+    game.world.spawning = true
+    game.state = "play"
+    showBanner(ZONE_NAMES.moon)
+end
+
+local function die()
+    local p = game.player
+    game.state = "over"
+    game.deadTimer = 0
+    fx.burst(p.x + p.w / 2, p.y + p.h / 2, 40, DUST_COLOR, { speed = 380, size = 6 })
+    fx.shake(0.4)
+
+    local final = calcScore()
+    if final > game.best then
+        game.best = final
+        game.newBest = true
+        saveBest(final)
+    end
+end
+
+local function bootBurst(p)
+    fx.burst(p.x + p.w / 2, p.y + p.h / 2, 16, BOOT_COLOR, { speed = 220, size = 5 })
+end
+
+local function dustAtFeet(p, count)
+    local x, y = p:feet()
+    fx.burst(x, y, count, DUST_COLOR, { speed = 120, vy = -80 * p.dir, gravity = 300 * p.dir })
+end
+
+local function handleAction(action)
+    local state = game.state
+    local p = game.player
+
+    if state == "title" then
+        if action == "jump" or action == "pause" then startRun()
+        elseif action == "back" then love.event.quit() end
+
+    elseif state == "play" then
+        if action == "jump" then
+            if p:jump() then dustAtFeet(p, 6) end
+        elseif action == "jumpRelease" then
+            p:cutJump()
+        elseif action == "flip" then
+            if p:flip() then bootBurst(p) end
+        elseif action == "pause" or action == "back" then
+            game.state = "paused"
+        end
+
+    elseif state == "paused" then
+        if action == "pause" or action == "jump" then
+            game.state = "play"
+        elseif action == "back" then
+            newRun()
+            game.state = "title"
+        end
+
+    elseif state == "over" then
+        if game.deadTimer < RESTART_DELAY then return end
+        if action == "jump" or action == "pause" then
+            startRun()
+        elseif action == "back" then
+            newRun()
+            game.state = "title"
+        end
+    end
+end
 
 function love.load()
-    anim8 = require 'libraries/anim8'
     love.graphics.setDefaultFilter("nearest", "nearest")
+    math.randomseed(os.time())
 
-    player.spriteSheets.idle = love.graphics.newImage("assets/player/IdleCat.png")
-    player.width = player.spriteSheets.idle:getWidth()
-    player.height = player.spriteSheets.idle:getHeight()
+    fonts.big = love.graphics.newFont(72)
+    fonts.medium = love.graphics.newFont(28)
+    fonts.small = love.graphics.newFont(18)
 
-    player.spriteSheet2 = love.graphics.newImage("assets/player/JumpCat.png")
-    player.width = player.spriteSheet2:getWidth()
-    player.height = player.spriteSheet2:getHeight()
-
-    local g = anim8.newGrid(32, 32,
-        player.spriteSheets.idle:getWidth(),
-        player.spriteSheets.idle:getHeight()
-    )
-
-    player.anim = anim8.newAnimation(g('1-7', 1), 0.1)
-    player.vy = 0
-    player.scale = 0.05
-
-    player.anim = anim8.newAnimation(g('1-7', 1), 0.1)
-
-    groundY = love.graphics.getHeight()
-    rightWall = love.graphics.getWidth()
-    for i, filename in ipairs(layers) do
-        background["layer"..i] = love.graphics.newImage("assets/backgrounds/" .. filename)
-    end
-    love.window.setMode(920, 720)
+    background.load()
+    Player.load()
+    game.best = loadBest()
+    newRun()
 end
 
+local function updatePlay(dt)
+    local p, world = game.player, game.world
+
+    game.speed = math.min(MAX_SPEED, game.speed + SPEED_RAMP * dt)
+    game.distance = game.distance + game.speed * dt
+    game.score = calcScore()
+    world:update(dt, game.speed)
+
+    local zone = world:zoneAt(world.scrolled + p.x)
+    if zone ~= game.zone then
+        game.zone = zone
+        showBanner(ZONE_NAMES[zone])
+    end
+
+    p:pushOutOf(world.solids)
+    p:update(dt, input.horizontal(), world.solids, FLOOR_Y, CEIL_Y)
+    if p.justLanded then dustAtFeet(p, 8) end
+
+    local hit, fish = world:collide(p)
+    for _, f in ipairs(fish) do
+        game.fishCount = game.fishCount + 1
+        fx.popup("+" .. FISH_POINTS, f.x, f.y - 10)
+        fx.burst(f.x + f.w / 2, f.y + f.h / 2, 10, { 1, 0.75, 0.3 }, { speed = 150 })
+    end
+
+    if hit or p.x + p.w < 0 then die() end
+end
 
 function love.update(dt)
-    -- Graviry
-    player.vy = player.vy + gravity * dt
-    player.y = player.y + player.vy * dt
+    dt = math.min(dt, 1 / 30)
+    fx.update(dt)
+    if game.banner then
+        game.banner.life = game.banner.life - dt
+        if game.banner.life <= 0 then game.banner = nil end
+    end
 
-    -- ground collision
-    if player.y + player.height * player.scale > groundY then
-        player.y = groundY - player.height * player.scale
-        player.vy = 0
+    if game.state == "play" then
+        updatePlay(dt)
+    elseif game.state == "title" then
+        game.world:update(dt, TITLE_SPEED)
+        game.player:update(dt, 0, {}, FLOOR_Y, CEIL_Y)
+    elseif game.state == "over" then
+        game.deadTimer = game.deadTimer + dt
     end
-    
-
-    if love.keyboard.isDown("d") then
-        player.x = player.x + player.speed * dt
-    elseif love.keyboard.isDown("a") then
-        player.x = player.x - player.speed * dt
-    end
-    if love.keyboard.isDown("space") then
-        local jumpCount = 2
-        print(jumpCount)
-        if player.y + player.height * player.scale < groundY or jumpCount == 0 then
-            return
-        end
-        player.vy = -600
-        jumpCount = jumpCount - 1
-        print(jumpCount)
-    end
-    player.anim:update(dt)
 end
 
-
 function love.draw()
-    for i = 11, 1, -1 do
-        love.graphics.draw(background["layer"..i], 0, 0)
+    local world, p = game.world, game.player
+
+    love.graphics.push()
+    love.graphics.translate(fx.shakeOffset())
+
+    background.draw()
+    world:drawBounds()
+    world:draw()
+    p:draw(game.state == "over" and { 1, 0.5, 0.5 } or nil)
+    fx.draw(fonts.medium)
+
+    if game.debug then
+        world:drawHitboxes()
+        love.graphics.setColor(1, 0, 0)
+        love.graphics.rectangle("line", p.x, p.y, p.w, p.h)
     end
-    -- love.graphics.rectangle("fill", 0, groundY, love.graphics.getWidth(), love.graphics.getHeight() - groundY)
-    player.anim:draw(player.spriteSheets.idle, player.x, player.y, 0, 2, 2)
+
+    love.graphics.pop()
+
+    if game.state ~= "title" then ui.drawHud(game, fonts) end
+    ui.drawOverlay(game, fonts)
+end
+
+function love.keypressed(key)
+    if key == "f1" then
+        game.debug = not game.debug
+        return
+    end
+    local action = input.actionForKey(key)
+    if action then handleAction(action) end
+end
+
+function love.keyreleased(key)
+    if input.actionForKey(key) == "jump" then handleAction("jumpRelease") end
+end
+
+function love.gamepadpressed(joystick, button)
+    local action = input.actionForButton(button)
+    if action then handleAction(action) end
+end
+
+function love.gamepadreleased(joystick, button)
+    if input.actionForButton(button) == "jump" then handleAction("jumpRelease") end
+end
+
+function love.gamepadaxis(joystick, axis, value)
+    local action = input.actionForTrigger(joystick, axis, value)
+    if action then handleAction(action) end
+end
+
+function love.focus(focused)
+    if not focused and game.state == "play" then
+        game.state = "paused"
+    end
 end
