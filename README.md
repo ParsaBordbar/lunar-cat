@@ -1,3 +1,6 @@
+<img width="1470" height="956" alt="1405-09-06_20-48-19" src="https://github.com/user-attachments/assets/905f6ef3-dfd8-487d-9dbb-b56604a83f57" />
+
+
 # Lunar Cat
 
 **A little cat. Two worlds. One pair of gravity boots.**
